@@ -1,0 +1,93 @@
+---
+title: "Less 8 Week 4 PA_"
+author: "Felix"
+date: "3 12 2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Download Data
+
+The data is already seperated in training and testing data sets.
+
+```{r}
+download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv", "pml-training.csv")
+download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv", "pml-testing.csv")
+
+training <- read.csv("pml-training.csv")
+testing <- read.csv("pml-testing.csv")
+```
+
+## Exploratory DA & Pre-Processing
+
+1. Identify and Remove Columns which only contain NAs.
+2. Train an easily interpretable decision tree get an idea for the data
+
+```{r}
+## some columns mostly consist of NA:
+na_count <-sapply(training, function(y) sum(is.na(y)))
+na_ind <- which(na_count > 0) ## these columns can be removed before further analysis.
+na_count2 <- sapply(testing, function(y) sum(is.na(y)))
+na_ind2 <- which(na_count2 > 0)
+
+na_ind_agg <- c(na_ind, na_ind2)
+na_ind_agg <- unique(na_ind_agg)
+
+training_noNA <- training[, -na_ind_agg]
+training_noNA$classe <- as.factor(training_noNA$classe)
+testing_noNA <- testing[, -na_ind_agg]
+
+library(caret)
+mod_rpart<- train(classe ~ ., method = "rpart", data = training_noNA)
+
+```
+
+```{r}
+library(rpart.plot)
+rpart.plot(mod_rpart$finalModel)
+mod_rpart
+```
+
+The decision tree is easily able to classify the observations solely by using the variable "X". It`s boring, but it seems to do the job to some extent. Predicted accuracy is ~ 72%...
+
+To better understand what`s happening in this model, you take a look at the box plot below, where y = x and x = classe.
+
+```{r}
+boxplot(training_noNA$X ~ training_noNA$classe)
+```
+Using the X-Variable is not working for the quiz. To supress other spurios correlations which result from some order in the data, we will remove X, raw_timestamp_part_1, raw_timestamp_part_2, cvtd_timestamp, new_window and num_window, as well.
+
+```{r}
+training_final <- training_noNA[,-(1:6)]
+testing_final <- testing_noNA[, -(1:6)]
+```
+
+## Final Model
+
+
+```{r}
+library(caret)
+library(parallel)
+library(doParallel)
+cluster <- makeCluster(detectCores() - 1) # convention to leave 1 core for OS
+registerDoParallel(cluster)
+
+## configure train control parameters; when "caret::train" is called, set trControl = fitControl !!
+fitControl <- trainControl(method = "cv",
+number = 5,
+allowParallel = TRUE)
+
+mod_rf <- train(classe ~., method = "rf", trControl = fitControl, data = training_final)
+
+## close cluster
+stopCluster(cluster)
+registerDoSEQ()
+```
+
+The random forest yields following estimated error rate (using 5-fold cross validation):
+```{r}
+mod_rf$finalModel
+```
